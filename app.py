@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timedelta
 import io
 import warnings
-!pip install streamlit pandas numpy plotly yfinance
+pip install streamlit pandas numpy plotly yfinance
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
