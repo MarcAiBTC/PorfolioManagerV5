@@ -1,3 +1,35 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import json
+import hashlib
+import os
+from datetime import datetime, timedelta
+import io
+import warnings
+
+# Suppress warnings
+warnings.filterwarnings('ignore')
+
+# Try to import optional libraries
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+
+try:
+    import yfinance as yf
+    YFINANCE_AVAILABLE = True
+except ImportError:
+    YFINANCE_AVAILABLE = False
+
+# File paths for persistent storage
+USERS_FILE = "users.json"
+PORTFOLIOS_FILE = "portfolios.json"
+
 elif uploaded_file.name.endswith('.csv'):
                     df = pd.read_csv(uploaded_file)
                     
