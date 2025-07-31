@@ -769,3 +769,5 @@ def show_asset_management():
                 potential_return = ((current_price - purchase_price) / purchase_price) * 100 if purchase_price > 0 else 0
                 
                 col_info1, col_info2, col_info3
+if __name__ == "__main__":
+    main()
