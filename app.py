@@ -646,59 +646,69 @@ def show_portfolio_overview():
             
             with col_chart1:
                 st.markdown("#### 🥧 Portfolio Allocation")
-                # Fix the string replacement issue by using proper method chaining
+                # Extract numeric values safely
                 current_values = []
                 symbols = []
                 
                 for item in portfolio_data:
-                    # Remove $ and , from string values
-                    value_str = item['Current Value'].replace('$', '').replace(',', '')
-                    current_values.append(float(value_str))
-                    symbols.append(item['Symbol'])
+                    try:
+                        value_str = item['Current Value'].replace('$', '').replace(',', '')
+                        current_values.append(float(value_str))
+                        symbols.append(item['Symbol'])
+                    except:
+                        continue
                 
-                fig_pie = px.pie(
-                    values=current_values,
-                    names=symbols,
-                    title="Current Holdings Distribution",
-                    hole=0.4
-                )
-                fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-                fig_pie.update_layout(height=400)
-                st.plotly_chart(fig_pie, use_container_width=True)
+                if current_values:
+                    fig_pie = px.pie(
+                        values=current_values,
+                        names=symbols,
+                        title="Current Holdings Distribution",
+                        hole=0.4
+                    )
+                    fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+                    fig_pie.update_layout(height=400)
+                    st.plotly_chart(fig_pie, use_container_width=True)
             
             with col_chart2:
                 st.markdown("#### 📈 Performance by Asset")
                 return_values = []
                 
                 for item in portfolio_data:
-                    # Remove % and + from return values
-                    return_str = item['Return %'].replace('%', '').replace('+', '')
-                    return_values.append(float(return_str))
+                    try:
+                        return_str = item['Return %'].replace('%', '').replace('+', '')
+                        return_values.append(float(return_str))
+                    except:
+                        return_values.append(0.0)
                 
-                fig_returns = px.bar(
-                    x=symbols,
-                    y=return_values,
-                    title="Return % by Holding",
-                    color=return_values,
-                    color_continuous_scale=['red', 'yellow', 'green']
-                )
-                fig_returns.update_layout(height=400, xaxis_title="Assets", yaxis_title="Return %")
-                st.plotly_chart(fig_returns, use_container_width=True)
+                if return_values and symbols:
+                    fig_returns = px.bar(
+                        x=symbols,
+                        y=return_values,
+                        title="Return % by Holding",
+                        color=return_values,
+                        color_continuous_scale=['red', 'yellow', 'green']
+                    )
+                    fig_returns.update_layout(height=400, xaxis_title="Assets", yaxis_title="Return %")
+                    st.plotly_chart(fig_returns, use_container_width=True)
         else:
             st.markdown("#### 📊 Simple Visualization")
             current_values = []
             symbols = []
             
             for item in portfolio_data:
-                value_str = item['Current Value'].replace('$', '').replace(',', '')
-                current_values.append(float(value_str))
-                symbols.append(item['Symbol'])
+                try:
+                    value_str = item['Current Value'].replace('$', '').replace(',', '')
+                    current_values.append(float(value_str))
+                    symbols.append(item['Symbol'])
+                except:
+                    continue
             
-            chart_data = pd.DataFrame({
-                'Symbol': symbols,
-                'Current Value': current_values
-            })
-            st.bar_chart(chart_data.set_index('Symbol'))
+            if current_values and symbols:
+                chart_data = pd.DataFrame({
+                    'Symbol': symbols,
+                    'Current Value': current_values
+                })
+                st.bar_chart(chart_data.set_index('Symbol'))
 
 def show_asset_management():
     """Display asset management page"""
@@ -768,6 +778,496 @@ def show_asset_management():
                 current_price = asset_info['current_price']
                 potential_return = ((current_price - purchase_price) / purchase_price) * 100 if purchase_price > 0 else 0
                 
-                col_info1, col_info2, col_info3
+                # Create three columns for metrics display
+                metric_col1, metric_col2, metric_col3 = st.columns(3)
+                
+                with metric_col1:
+                    st.metric("Current Price", f"${current_price:.2f}")
+                with metric_col2:
+                    st.metric("Your Purchase Price", f"${purchase_price:.2f}")
+                with metric_col3:
+                    st.metric("Potential Return", f"{potential_return:+.1f}%", 
+                             delta=f"${(current_price - purchase_price) * shares:+.2f}")
+                
+                if st.button("✅ Add to Portfolio", type="primary", use_container_width=True):
+                    st.session_state.portfolio[symbol_to_use] = {
+                        'shares': shares,
+                        'asset_type': asset_type,
+                        'purchase_price': purchase_price,
+                        'added_date': datetime.now().isoformat()
+                    }
+                    
+                    portfolios = load_portfolios()
+                    portfolios[st.session_state.username] = st.session_state.portfolio
+                    save_portfolios(portfolios)
+                    
+                    st.markdown("""
+                    <div class="success-card">
+                        <strong>🎉 Asset Added Successfully!</strong><br>
+                        Your portfolio metrics are being recalculated with the new asset allocation.
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.rerun()
+            else:
+                st.error(f"❌ Could not find asset data for '{symbol_to_use}'. Please check the symbol.")
+    
+    with tab2:
+        st.markdown("### Remove Assets from Portfolio")
+        
+        if st.session_state.portfolio:
+            current_values = []
+            for symbol, data in st.session_state.portfolio.items():
+                asset_info = fetch_asset_data(symbol)
+                if asset_info:
+                    current_value = data['shares'] * asset_info['current_price']
+                    current_values.append({
+                        'Symbol': symbol,
+                        'Shares': f"{data['shares']:.3f}",
+                        'Current Value': f"${current_value:,.2f}",
+                        'Asset Type': data['asset_type']
+                    })
+            
+            if current_values:
+                df_current = pd.DataFrame(current_values)
+                st.dataframe(df_current, hide_index=True)
+            
+            assets_to_remove = st.multiselect(
+                "Select assets to remove:",
+                list(st.session_state.portfolio.keys()),
+                help="Choose one or more assets to remove from your portfolio"
+            )
+            
+            if assets_to_remove:
+                st.warning(f"⚠️ You are about to remove {len(assets_to_remove)} asset(s) from your portfolio.")
+                
+                if st.button("🗑️ Remove Selected Assets", type="secondary"):
+                    for asset in assets_to_remove:
+                        del st.session_state.portfolio[asset]
+                    
+                    portfolios = load_portfolios()
+                    portfolios[st.session_state.username] = st.session_state.portfolio
+                    save_portfolios(portfolios)
+                    
+                    st.markdown("""
+                    <div class="success-card">
+                        <strong>✅ Assets Removed Successfully!</strong><br>
+                        Your portfolio has been updated and metrics recalculated.
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.rerun()
+        else:
+            st.markdown("""
+            <div class="info-card">
+                <strong>📝 No assets to remove</strong><br>
+                Your portfolio is currently empty. Add some investments first!
+            </div>
+            """, unsafe_allow_html=True)
+
+def show_analytics_dashboard():
+    """Display analytics dashboard"""
+    
+    st.markdown("### 📊 Advanced Analytics Dashboard")
+    
+    if st.session_state.learning_mode:
+        st.markdown("""
+        <div class="info-card">
+            <strong>📈 Analytics Dashboard Guide:</strong><br>
+            This dashboard provides professional-grade analysis tools including performance metrics, technical analysis, and AI-powered insights.
+        </div>
+        """, unsafe_allow_html=True)
+    
+    if not st.session_state.portfolio:
+        st.warning("⚠️ Add assets to your portfolio to see advanced analytics.")
+        return
+    
+    metrics = calculate_portfolio_metrics_advanced(st.session_state.portfolio)
+    
+    st.markdown("### 📈 Advanced Performance Metrics")
+    
+    perf_col1, perf_col2, perf_col3, perf_col4, perf_col5 = st.columns(5)
+    
+    with perf_col1:
+        st.metric(
+            "Annualized Return", 
+            f"{metrics['annualized_return']:+.1f}%",
+            help="Expected annual return based on current performance"
+        )
+    
+    with perf_col2:
+        st.metric(
+            "Portfolio Beta", 
+            f"{metrics['beta']:.2f}",
+            delta="Market Risk" if metrics['beta'] > 1 else "Lower Risk",
+            help="Portfolio volatility relative to market"
+        )
+    
+    with perf_col3:
+        st.metric(
+            "Sharpe Ratio", 
+            f"{metrics['sharpe_ratio']:.2f}",
+            delta="Excellent" if metrics['sharpe_ratio'] > 1 else "Good" if metrics['sharpe_ratio'] > 0.5 else "Needs Improvement",
+            help="Risk-adjusted return measure"
+        )
+    
+    with perf_col4:
+        st.metric(
+            "Max Drawdown", 
+            f"{metrics['max_drawdown']:.1f}%",
+            delta="Risk Level",
+            delta_color="inverse",
+            help="Largest peak-to-trough decline"
+        )
+    
+    with perf_col5:
+        st.metric(
+            "Portfolio Volatility", 
+            f"{metrics['volatility']:.1f}%",
+            help="Measure of price fluctuation"
+        )
+    
+    # Technical analysis for top holdings
+    st.markdown("### 🔍 Technical Analysis - Top Holdings")
+    
+    portfolio_values = []
+    for symbol, data in st.session_state.portfolio.items():
+        asset_info = fetch_asset_data(symbol)
+        if asset_info:
+            value = data['shares'] * asset_info['current_price']
+            portfolio_values.append((symbol, value))
+    
+    portfolio_values.sort(key=lambda x: x[1], reverse=True)
+    top_holdings = [item[0] for item in portfolio_values[:3]]
+    
+    for i, symbol in enumerate(top_holdings):
+        with st.expander(f"📊 {symbol} - Technical Analysis", expanded=(i == 0)):
+            indicators = calculate_technical_indicators(symbol)
+            
+            if indicators is not None:
+                tech_col1, tech_col2, tech_col3, tech_col4 = st.columns(4)
+                
+                current_price = indicators['Close'].iloc[-1]
+                ma20 = indicators['MA_20'].iloc[-1]
+                current_rsi = indicators['RSI'].iloc[-1]
+                current_macd = indicators['MACD'].iloc[-1]
+                current_signal = indicators['MACD_Signal'].iloc[-1]
+                
+                with tech_col1:
+                    price_trend = "Bullish" if current_price > ma20 else "Bearish"
+                    st.metric("Price Trend", price_trend, f"${current_price:.2f}")
+                
+                with tech_col2:
+                    rsi_status = "Overbought" if current_rsi > 70 else "Oversold" if current_rsi < 30 else "Neutral"
+                    rsi_color = "🔴" if current_rsi > 70 else "🟢" if current_rsi < 30 else "🟡"
+                    st.metric("RSI Signal", f"{rsi_color} {rsi_status}", f"{current_rsi:.1f}")
+                
+                with tech_col3:
+                    macd_trend = "Bullish" if current_macd > current_signal else "Bearish"
+                    macd_color = "🟢" if current_macd > current_signal else "🔴"
+                    st.metric("MACD Signal", f"{macd_color} {macd_trend}")
+                
+                with tech_col4:
+                    support_level = current_price * 0.95
+                    resistance_level = current_price * 1.05
+                    st.metric("Support/Resistance", f"${support_level:.2f} / ${resistance_level:.2f}")
+                
+                if PLOTLY_AVAILABLE:
+                    fig = make_subplots(
+                        rows=3, cols=1,
+                        subplot_titles=(
+                            f'{symbol} - Price & Moving Averages',
+                            'Relative Strength Index (RSI)',
+                            'MACD & Signal Line'
+                        ),
+                        vertical_spacing=0.08,
+                        row_heights=[0.5, 0.25, 0.25]
+                    )
+                    
+                    fig.add_trace(
+                        go.Scatter(x=indicators.index, y=indicators['Close'], name='Price', line=dict(color='blue', width=2)),
+                        row=1, col=1
+                    )
+                    fig.add_trace(
+                        go.Scatter(x=indicators.index, y=indicators['MA_20'], name='MA 20', line=dict(color='orange')),
+                        row=1, col=1
+                    )
+                    fig.add_trace(
+                        go.Scatter(x=indicators.index, y=indicators['MA_50'], name='MA 50', line=dict(color='red')),
+                        row=1, col=1
+                    )
+                    
+                    fig.add_trace(
+                        go.Scatter(x=indicators.index, y=indicators['RSI'], name='RSI', line=dict(color='purple')),
+                        row=2, col=1
+                    )
+                    fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+                    fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+                    
+                    fig.add_trace(
+                        go.Scatter(x=indicators.index, y=indicators['MACD'], name='MACD', line=dict(color='blue')),
+                        row=3, col=1
+                    )
+                    fig.add_trace(
+                        go.Scatter(x=indicators.index, y=indicators['MACD_Signal'], name='Signal', line=dict(color='red')),
+                        row=3, col=1
+                    )
+                    
+                    fig.update_layout(height=700, showlegend=True, title_text=f"{symbol} Technical Analysis")
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.markdown("#### 📈 Price Chart")
+                    st.line_chart(indicators[['Close', 'MA_20', 'MA_50']])
+                    
+                    simple_col1, simple_col2 = st.columns(2)
+                    with simple_col1:
+                        st.markdown("#### RSI")
+                        st.line_chart(indicators['RSI'])
+                    with simple_col2:
+                        st.markdown("#### MACD")
+                        st.line_chart(indicators[['MACD', 'MACD_Signal']])
+    
+    # Investment suggestions
+    st.markdown("### 🤖 AI-Powered Investment Insights")
+    suggestions = generate_investment_suggestions(st.session_state.portfolio)
+    
+    enhanced_suggestions = []
+    
+    if metrics['total_return'] > 10:
+        enhanced_suggestions.append({
+            'type': 'success',
+            'message': f'🎉 Excellent performance! Your portfolio is up {metrics["total_return"]:.1f}%. Consider taking some profits and rebalancing.'
+        })
+    elif metrics['total_return'] < -5:
+        enhanced_suggestions.append({
+            'type': 'warning',
+            'message': f'📉 Portfolio is down {abs(metrics["total_return"]):.1f}%. Review underperforming assets and consider strategic rebalancing.'
+        })
+    
+    if metrics['volatility'] > 25:
+        enhanced_suggestions.append({
+            'type': 'warning',
+            'message': f'⚡ High volatility detected ({metrics["volatility"]:.1f}%). Consider adding stable assets like bonds or dividend stocks.'
+        })
+    
+    all_suggestions = enhanced_suggestions + suggestions
+    
+    for suggestion in all_suggestions[:6]:
+        if suggestion['type'] == 'diversification':
+            st.markdown(f"""
+            <div class="info-card">
+                <strong>🎯 Diversification:</strong> {suggestion['message']}
+            </div>
+            """, unsafe_allow_html=True)
+        elif suggestion['type'] == 'rebalancing':
+            st.markdown(f"""
+            <div class="warning-card">
+                <strong>⚖️ Rebalancing:</strong> {suggestion['message']}
+            </div>
+            """, unsafe_allow_html=True)
+        elif suggestion['type'] == 'opportunity':
+            st.markdown(f"""
+            <div class="success-card">
+                <strong>🚀 Opportunity:</strong> {suggestion['message']}
+            </div>
+            """, unsafe_allow_html=True)
+        elif suggestion['type'] == 'success':
+            st.markdown(f"""
+            <div class="success-card">
+                <strong>✅ Success:</strong> {suggestion['message']}
+            </div>
+            """, unsafe_allow_html=True)
+        elif suggestion['type'] == 'warning':
+            st.markdown(f"""
+            <div class="warning-card">
+                <strong>⚠️ Warning:</strong> {suggestion['message']}
+            </div>
+            """, unsafe_allow_html=True)
+
+def show_export_import():
+    """Display export/import functionality"""
+    
+    st.markdown("### 📁 Export & Import Portfolio")
+    
+    if st.session_state.learning_mode:
+        st.markdown("""
+        <div class="info-card">
+            <strong>📁 Export/Import Guide:</strong><br>
+            Backup and restore your portfolio data. Export as JSON or CSV for safekeeping, or import previously saved portfolios.
+        </div>
+        """, unsafe_allow_html=True)
+    
+    export_tab, import_tab = st.tabs(["📤 Export Portfolio", "📥 Import Portfolio"])
+    
+    with export_tab:
+        st.markdown("### Export Your Portfolio Data")
+        
+        if not st.session_state.portfolio:
+            st.markdown("""
+            <div class="warning-card">
+                <strong>📝 No portfolio data to export</strong><br>
+                Add some investments to your portfolio first, then return here to export your data.
+            </div>
+            """, unsafe_allow_html=True)
+            return
+        
+        export_format = st.selectbox("Choose Export Format", ["JSON", "CSV"])
+        
+        if export_format == "JSON":
+            export_data = {
+                'username': st.session_state.username,
+                'export_date': datetime.now().isoformat(),
+                'portfolio': st.session_state.portfolio,
+                'version': '2.0'
+            }
+            
+            json_string = json.dumps(export_data, indent=2)
+            
+            st.download_button(
+                label="📥 Download Portfolio (JSON)",
+                data=json_string,
+                file_name=f"portfolio_{st.session_state.username}_{datetime.now().strftime('%Y%m%d')}.json",
+                mime="application/json"
+            )
+            
+            with st.expander("👀 Preview JSON Data"):
+                st.code(json_string, language="json")
+        
+        else:  # CSV format
+            csv_data = []
+            for symbol, data in st.session_state.portfolio.items():
+                asset_info = fetch_asset_data(symbol)
+                if asset_info:
+                    csv_data.append({
+                        'Symbol': symbol,
+                        'Name': asset_info['name'],
+                        'Shares': data['shares'],
+                        'Asset_Type': data['asset_type'],
+                        'Purchase_Price': data.get('purchase_price', asset_info['current_price']),
+                        'Current_Price': asset_info['current_price'],
+                        'Current_Value': data['shares'] * asset_info['current_price'],
+                        'Added_Date': data['added_date']
+                    })
+            
+            if csv_data:
+                df = pd.DataFrame(csv_data)
+                csv_string = df.to_csv(index=False)
+                
+                st.download_button(
+                    label="📥 Download Portfolio (CSV)",
+                    data=csv_string,
+                    file_name=f"portfolio_{st.session_state.username}_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+                
+                with st.expander("👀 Preview CSV Data"):
+                    st.dataframe(df)
+    
+    with import_tab:
+        st.markdown("### Import Portfolio Data")
+        
+        uploaded_file = st.file_uploader(
+            "Choose a portfolio file",
+            type=['json', 'csv'],
+            help="Upload a previously exported portfolio file"
+        )
+        
+        if uploaded_file is not None:
+            try:
+                if uploaded_file.name.endswith('.json'):
+                    content = uploaded_file.read()
+                    data = json.loads(content)
+                    
+                    if 'portfolio' in data:
+                        st.markdown("""
+                        <div class="success-card">
+                            <strong>✅ Valid portfolio file detected!</strong><br>
+                            Ready to import your portfolio data.
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        with st.expander("👀 Preview Import Data"):
+                            st.json(data['portfolio'])
+                        
+                        import_option = st.selectbox(
+                            "Import Option",
+                            ["Replace Current Portfolio", "Merge with Current Portfolio"]
+                        )
+                        
+                        if st.button("🚀 Import Portfolio", type="primary"):
+                            if import_option == "Replace Current Portfolio":
+                                st.session_state.portfolio = data['portfolio']
+                            else:
+                                for symbol, asset_data in data['portfolio'].items():
+                                    st.session_state.portfolio[symbol] = asset_data
+                            
+                            portfolios = load_portfolios()
+                            portfolios[st.session_state.username] = st.session_state.portfolio
+                            save_portfolios(portfolios)
+                            
+                            st.markdown("""
+                            <div class="success-card">
+                                <strong>🎉 Portfolio imported successfully!</strong><br>
+                                Your portfolio has been updated with the imported data.
+                            </div>
+                            """, unsafe_allow_html=True)
+                            st.rerun()
+                    else:
+                        st.error("❌ Invalid portfolio file format.")
+                
+                elif uploaded_file.name.endswith('.csv'):
+                    df = pd.read_csv(uploaded_file)
+                    
+                    required_columns = ['Symbol', 'Shares', 'Asset_Type']
+                    if all(col in df.columns for col in required_columns):
+                        st.markdown("""
+                        <div class="success-card">
+                            <strong>✅ Valid CSV file detected!</strong><br>
+                            Ready to import your portfolio data.
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        with st.expander("👀 Preview Import Data"):
+                            st.dataframe(df)
+                        
+                        csv_import_option = st.selectbox(
+                            "Import Option",
+                            ["Replace Current Portfolio", "Merge with Current Portfolio"],
+                            key="csv_import_option"
+                        )
+                        
+                        if st.button("🚀 Import CSV Portfolio", type="primary"):
+                            new_portfolio = {}
+                            
+                            for _, row in df.iterrows():
+                                symbol = row['Symbol']
+                                new_portfolio[symbol] = {
+                                    'shares': float(row['Shares']),
+                                    'asset_type': row['Asset_Type'],
+                                    'purchase_price': float(row.get('Purchase_Price', 100.0)),
+                                    'added_date': datetime.now().isoformat()
+                                }
+                            
+                            if csv_import_option == "Replace Current Portfolio":
+                                st.session_state.portfolio = new_portfolio
+                            else:
+                                for symbol, asset_data in new_portfolio.items():
+                                    st.session_state.portfolio[symbol] = asset_data
+                            
+                            portfolios = load_portfolios()
+                            portfolios[st.session_state.username] = st.session_state.portfolio
+                            save_portfolios(portfolios)
+                            
+                            st.markdown("""
+                            <div class="success-card">
+                                <strong>🎉 CSV portfolio imported successfully!</strong><br>
+                                Your portfolio has been updated with the imported data.
+                            </div>
+                            """, unsafe_allow_html=True)
+                            st.rerun()
+                    else:
+                        st.error(f"❌ CSV file must contain columns: {', '.join(required_columns)}")
+                        
+            except Exception as e:
+                st.error(f"❌ Error importing file: {str(e)}")
+
 if __name__ == "__main__":
     main()
